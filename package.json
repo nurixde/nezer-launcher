@@ -1,0 +1,88 @@
+{
+  "name": "nezer-launcher",
+  "private": true,
+  "version": "2.3.0",
+  "description": "NEZER LAUNCHER — independent Minecraft: Java Edition launcher for Windows",
+  "author": "NEZER LAUNCHER",
+  "license": "MIT",
+  "main": "dist-electron/main.js",
+  "scripts": {
+    "dev": "concurrently -k \"vite --host 127.0.0.1 --port 5173 --strictPort\" \"npm:dev:electron\"",
+    "dev:electron": "npm run build:electron && wait-on http://127.0.0.1:5173 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5173 electron .",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.electron.json --noEmit",
+    "build": "npm run typecheck && vite build && npm run build:electron",
+    "dist:win": "npm run build && electron-builder --win nsis --publish never",
+    "test": "node --test tests/*.test.cjs"
+  },
+  "dependencies": {
+    "minecraft-launcher-core": "3.18.2",
+    "prismarine-auth": "3.1.1",
+    "react": "19.3.1",
+    "react-dom": "19.3.1",
+    "lucide-react": "^0.468.0",
+    "electron-updater": "^6.7.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^4.5.0",
+    "concurrently": "^9.1.2",
+    "cross-env": "^7.0.3",
+    "electron": "45.2.3",
+    "electron-builder": "26.18.0",
+    "typescript": "^5.9.0",
+    "vite": "^6.4.5",
+    "wait-on": "^8.0.3"
+  },
+  "build": {
+    "appId": "com.nezer.launcher",
+    "productName": "NEZER LAUNCHER",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/minecraft-launcher-core/**",
+      "**/node_modules/prismarine-auth/**"
+    ],
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*",
+      "package.json",
+      "node_modules/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "NEZER LAUNCHER",
+      "guid": "b1b3452d-8983-47f8-9afa-c667b9aa9c29",
+      "artifactName": "NEZER-LAUNCHER-Setup-${version}.${ext}"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "nurixde",
+        "repo": "nezer-launcher",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nurixde/nezer-launcher.git"
+  }
+}
