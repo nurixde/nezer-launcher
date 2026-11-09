@@ -1,0 +1,45 @@
+name: Build and publish NEZER LAUNCHER
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  windows-release:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Verify tag matches application version
+        shell: pwsh
+        run: |
+          $appVersion = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ('v' + $appVersion -ne '${{ github.ref_name }}') {
+            throw "Tag ${{ github.ref_name }} does not match package.json version $appVersion"
+          }
+      - name: Install dependencies
+        run: npm install
+      - name: Run tests
+        run: npm test
+      - name: Build UI and Windows NSIS installer
+        run: npm run dist:win
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+      - name: Publish release with update metadata
+        uses: softprops/action-gh-release@v2
+        with:
+          name: NEZER LAUNCHER ${{ github.ref_name }}
+          generate_release_notes: true
+          fail_on_unmatched_files: true
+          files: |
+            release/*.exe
+            release/latest.yml
+            release/*.blockmap
