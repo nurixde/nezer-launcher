@@ -28,6 +28,11 @@ test('errors remain actionable and no auth credentials are added to logs', () =>
   assert.match(friendlyAuthError(new Error('403 Forbidden'), 'minecraft'), /403 Forbidden/);
 });
 
+test('OAuth application errors are distinguished from user credential problems', () => {
+  assert.match(friendlyAuthError(new Error('invalid_client'), 'microsoft'), /OAuth/);
+  assert.match(friendlyAuthError(new Error('invalid_grant'), 'microsoft'), /invalid_grant/);
+});
+
 test('new interactive flow skips stale authentication caches', () => {
   const mainSource = fs.readFileSync(path.join(__dirname, '..', 'electron', 'main.ts'), 'utf8');
   assert.match(mainSource, /forceRefresh: freshLogin/);
