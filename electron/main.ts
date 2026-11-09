@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { Authflow, Titles } from 'prismarine-auth';
+import { friendlyAuthError } from './auth-errors';
 import { Client } from 'minecraft-launcher-core';
 import { autoUpdater } from 'electron-updater';
 import { MOD_FILENAME_RE, javaRequirement, safeVersionId } from './manifest';
@@ -166,14 +167,16 @@ async function getVersions(): Promise<Version[]> {
   knownVersions = merged;
   return merged;
 }
-function makeFlow(codeHandler?: (code: { user_code?: string; verification_uri?: string; message?: string }) => void): Authflow {
+function makeFlow(codeHandler?: (code: { user_code?: string; verification_uri?: string; message?: string }) => void, freshLogin = false): Authflow {
   fs.mkdirSync(authDir(), { recursive: true });
-  // Microsoft sign-in is handled in the system browser; the password never touches the launcher.
+  // A user-initiated login MUST get a new device code, not resume an incomplete cached attempt.
+  // Non-interactive token refresh while launching Minecraft still uses its saved session.
   return new Authflow('nezer-player', authDir(), {
-    flow: 'sisu', authTitle: Titles.MinecraftJava, deviceType: 'Win32'
+    flow: 'sisu', authTitle: Titles.MinecraftJava, deviceType: 'Win32', forceRefresh: freshLogin
   }, code => codeHandler?.(code));
 }
 async function verifiedToken(interactive: boolean): Promise<{ token: string; profile: Profile }> {
+  let authStep: 'microsoft' | 'minecraft' = 'microsoft';
   const flow = makeFlow(code => {
     const userCode = safeString(code.user_code, 80);
     const verificationUri = safeString(code.verification_uri, 200) || 'https://www.microsoft.com/link';
@@ -181,22 +184,22 @@ async function verifiedToken(interactive: boolean): Promise<{ token: string; pro
     const expiresIn = Number((code as { expires_in?: number }).expires_in);
     const expiresAt = Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 900) * 1000;
     if (userCode) event('auth:code', { userCode, verificationUri, message: safeString(code.message), expiresAt });
-  });
+  }, interactive);
   try {
     if (interactive) {
-      announce('authenticating', 'Ожидание подтверждения Microsoft. Код одноразовый.');
-      // Splitting these steps makes it clear whether the browser authorization has succeeded.
+      announce('authenticating', 'Подтверди НОВЫЙ код Microsoft из окна лаунчера. Не используй код от прошлой попытки.');
       await flow.getMsaToken();
+      authStep = 'minecraft';
       announce('authenticating', 'Microsoft подтверждён. Проверяем Xbox и Minecraft Java Edition…');
     }
     const result = await flow.getMinecraftJavaToken({ fetchEntitlements: true, fetchProfile: true });
     if (!result?.profile?.id || !result.profile.name || !result.token) {
-      throw new Error('Вход Microsoft прошёл, но профиль Minecraft Java Edition не найден. Убедись, что на этом аккаунте куплен Minecraft Java Edition и создан Xbox-профиль.');
+      throw new Error('Microsoft подтвердил вход, но профиль Minecraft Java Edition получить не удалось. Проверь Xbox-профиль, наличие Minecraft Java Edition и соединение с сервисами Minecraft.');
     }
     return { token: result.token, profile: { id: result.profile.id, name: result.profile.name } };
   } catch (err) {
-    if (!interactive) throw new Error('Сессия Microsoft истекла. Войди в аккаунт заново.');
-    throw err;
+    if (!interactive) throw new Error('Не удалось обновить сессию Microsoft. Открой «Аккаунты» и войди заново.');
+    throw new Error(friendlyAuthError(err, authStep));
   }
 }
 function login(): Promise<Profile> {
@@ -500,8 +503,9 @@ app.whenReady().then(() => {
   ipcMain.handle('fabric:install', (_, version: string, loader: string) => installFabric(version, loader));
   ipcMain.handle('auth:login', () => login());
   ipcMain.handle('auth:restart', () => {
-    // prismarine-auth does not expose cancellation of a pending device-code request.
-    // Relaunching stops the previous request and gives a genuinely fresh code.
+    // prismarine-auth has no cancel API. A relaunch stops the old polling request;
+    // makeFlow(..., true) clears incomplete tokens before the next sign-in.
+    if (working || processHandle) throw new Error('Нельзя перезапускать вход во время игры.');
     setImmediate(() => { app.relaunch(); app.exit(0); });
     return true;
   });
