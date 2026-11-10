@@ -2,7 +2,7 @@ export type Page = 'home' | 'versions' | 'fabric' | 'mods' | 'packs' | 'accounts
 export type GameStage = 'idle' | 'authenticating' | 'preparing' | 'downloading' | 'launching' | 'running' | 'error';
 export interface VersionInfo { id: string; type: 'release' | 'snapshot' | 'old_beta' | 'old_alpha'; releaseTime: string; installed: boolean; }
 export interface UserProfile { id: string; name: string; }
-export interface Settings { launchMode: 'offline' | 'microsoft'; nickname: string; ramGb: number; javaPath: string; gameDirectory: string; keepOpen: boolean; showSnapshots: boolean; serverAddress: string; snowEnabled: boolean; snowIntensity: number; accentColor: string; }
+export interface Settings { launchMode: 'offline' | 'microsoft'; nickname: string; microsoftClientId: string; ramGb: number; javaPath: string; gameDirectory: string; keepOpen: boolean; showSnapshots: boolean; serverAddress: string; snowEnabled: boolean; snowIntensity: number; accentColor: string; }
 export interface GameEvent { stage: GameStage; message: string; percentage?: number; versionId?: string; }
 export interface AuthCode { userCode: string; verificationUri: string; message?: string; expiresAt?: number; }
 export interface Bootstrap { settings: Settings; profile: UserProfile | null; versions: VersionInfo[]; stage: GameStage; }
