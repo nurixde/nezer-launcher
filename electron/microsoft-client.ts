@@ -29,7 +29,9 @@ type RawDeviceCode = {
   message?: unknown;
 };
 /** Handle prismarine-auth live/sisu and MSAL's different device-code field names. */
-export function normalizeDeviceCode(raw: RawDeviceCode, now = Date.now()): MicrosoftDeviceCode | null {
+export function normalizeDeviceCode(value: unknown, now = Date.now()): MicrosoftDeviceCode | null {
+  if (!value || typeof value !== 'object') return null;
+  const raw = value as RawDeviceCode;
   const userCode = typeof raw.userCode === 'string' ? raw.userCode.trim()
     : typeof raw.user_code === 'string' ? raw.user_code.trim() : '';
   if (!userCode || userCode.length > 80) return null;
