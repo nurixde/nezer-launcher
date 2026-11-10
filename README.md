@@ -50,3 +50,14 @@ npm run dist:win
 Тесты: `npm test`. Компиляция: `npm run build`. Реальная сборка и первый GitHub Release должны завершиться успешно до того, как можно будет утверждать, что автообновление работает.
 
 Minecraft является товарным знаком Mojang Studios. Приложение не связано с Mojang, Microsoft или Minecraft.
+
+
+## Microsoft OAuth — independent app registration (experimental feature branch)
+
+The existing device-code flow uses a legacy Minecraft title/client ID. Microsoft may decline the token request (`invalid_grant`) even when the browser says the user signed in successfully. Repeating an expired code does not resolve OAuth client restrictions.
+
+To use an independent OAuth app, configure its **Application (client) ID** in **Настройки → Microsoft OAuth**. The ID must be a GUID, and the application must be registered as a public client in Microsoft Entra. The `msal` flow requires `XboxLive.signin` scope, and Minecraft Services may require official approval of the app ID. See [Microsoft OAuth device-code documentation](https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-device-code) and [Minecraft application ID guidance](https://help.minecraft.net/hc/en-us/articles/16254801392141).
+
+Do not share Microsoft passwords, client secrets, access tokens, refresh tokens, or one-time login codes. A public client ID is not a secret. The app must follow Microsoft's sign-in policies; no bypass is implemented.
+
+This feature is **not validated with a real Microsoft or Minecraft profile**. It remains in a separate branch until the project has an appropriately registered/approved client ID and the OAuth flow is tested end-to-end. The old stable GitHub Release remains unchanged.
