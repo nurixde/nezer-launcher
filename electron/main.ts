@@ -179,7 +179,7 @@ function makeFlow(codeHandler?: (code: unknown) => void, freshLogin = false): Au
     // Independent Microsoft apps must use MSAL and their own registered public client ID.
     // Minecraft Services can require additional approval for this ID.
     return new Authflow(`nezer-msal-${clientId}`, authDir(), {
-      flow: 'msal', authTitle: clientId, forceRefresh: freshLogin
+      flow: 'msal', authTitle: clientId as Titles, forceRefresh: freshLogin
     }, code => codeHandler?.(code));
   }
   // Legacy path kept for existing users; Microsoft may reject its token exchange.
