@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { randomUUID, createHash } from 'node:crypto';
 import { Authflow, Titles } from 'prismarine-auth';
+import { normalizeMicrosoftClientId, normalizeDeviceCode } from './microsoft-client';
 import { friendlyAuthError } from './auth-errors';
 import { Client } from 'minecraft-launcher-core';
 import { autoUpdater } from 'electron-updater';
@@ -16,7 +17,7 @@ type VersionType = 'release' | 'snapshot' | 'old_beta' | 'old_alpha';
 type Version = { id: string; type: VersionType; releaseTime: string; installed: boolean };
 type Profile = { id: string; name: string };
 type Settings = {
-  launchMode: 'offline' | 'microsoft'; nickname: string; ramGb: number; javaPath: string; gameDirectory: string;
+  launchMode: 'offline' | 'microsoft'; nickname: string; microsoftClientId: string; ramGb: number; javaPath: string; gameDirectory: string;
   keepOpen: boolean; showSnapshots: boolean; serverAddress: string; snowEnabled: boolean; snowIntensity: number; accentColor: string;
 };
 type MojangManifest = { versions: Array<{ id: string; type: VersionType; releaseTime: string }> };
@@ -102,7 +103,7 @@ const safeString = (value: unknown, max = 200): string =>
 
 function defaultSettings(): Settings {
   return {
-    launchMode: 'offline', nickname: 'Steve', ramGb: 4, javaPath: 'auto',
+    launchMode: 'offline', nickname: 'Steve', microsoftClientId: '', ramGb: 4, javaPath: 'auto',
     gameDirectory: path.join(dataDir(), '.minecraft'),
     keepOpen: true, showSnapshots: false, serverAddress: '', snowEnabled: true, snowIntensity: 55, accentColor: '#9466ff'
   };
@@ -115,6 +116,8 @@ function readConfig(): void {
     settings.launchMode = settings.launchMode === 'microsoft' ? 'microsoft' : 'offline';
     settings.gameDirectory = settings.gameDirectory || defaults.gameDirectory;
     settings.javaPath = settings.javaPath === 'java' ? 'auto' : (settings.javaPath || 'auto');
+    try { settings.microsoftClientId = normalizeMicrosoftClientId(settings.microsoftClientId); }
+    catch { settings.microsoftClientId = ''; }
     settings.ramGb = Math.max(2, Math.min(16, Number(settings.ramGb) || 4));
     profile = saved.profile?.id && saved.profile.name ? saved.profile : null;
   } catch {
@@ -167,10 +170,19 @@ async function getVersions(): Promise<Version[]> {
   knownVersions = merged;
   return merged;
 }
-function makeFlow(codeHandler?: (code: { user_code?: string; verification_uri?: string; message?: string }) => void, freshLogin = false): Authflow {
+function makeFlow(codeHandler?: (code: unknown) => void, freshLogin = false): Authflow {
   fs.mkdirSync(authDir(), { recursive: true });
-  // A user-initiated login MUST get a new device code, not resume an incomplete cached attempt.
-  // Non-interactive token refresh while launching Minecraft still uses its saved session.
+  // A user-initiated login should request a new device code. Non-interactive
+  // refresh on game launch uses the same provider and saved token cache.
+  const clientId = settings.microsoftClientId;
+  if (clientId) {
+    // Independent Microsoft apps must use MSAL and their own registered public client ID.
+    // Minecraft Services can require additional approval for this ID.
+    return new Authflow(`nezer-msal-${clientId}`, authDir(), {
+      flow: 'msal', authTitle: clientId as Titles, forceRefresh: freshLogin
+    }, code => codeHandler?.(code));
+  }
+  // Legacy path kept for existing users; Microsoft may reject its token exchange.
   return new Authflow('nezer-player', authDir(), {
     flow: 'sisu', authTitle: Titles.MinecraftJava, deviceType: 'Win32', forceRefresh: freshLogin
   }, code => codeHandler?.(code));
@@ -178,12 +190,10 @@ function makeFlow(codeHandler?: (code: { user_code?: string; verification_uri?: 
 async function verifiedToken(interactive: boolean): Promise<{ token: string; profile: Profile }> {
   let authStep: 'microsoft' | 'minecraft' = 'microsoft';
   const flow = makeFlow(code => {
-    const userCode = safeString(code.user_code, 80);
-    const verificationUri = safeString(code.verification_uri, 200) || 'https://www.microsoft.com/link';
-    // Expiry is intentionally sent to the UI so an old device code is never shown as valid.
-    const expiresIn = Number((code as { expires_in?: number }).expires_in);
-    const expiresAt = Date.now() + (Number.isFinite(expiresIn) && expiresIn > 0 ? expiresIn : 900) * 1000;
-    if (userCode) event('auth:code', { userCode, verificationUri, message: safeString(code.message), expiresAt });
+    // Live/SISU uses snake_case; MSAL uses camelCase and a Date expiry.
+    // Both map to the existing Russian device-code dialog.
+    const normalized = normalizeDeviceCode(code);
+    if (normalized) event('auth:code', normalized);
   }, interactive);
   try {
     if (interactive) {
@@ -533,6 +543,16 @@ app.whenReady().then(() => {
       settings.nickname = nickname;
     }
     if (next.launchMode === 'offline' || next.launchMode === 'microsoft') settings.launchMode = next.launchMode;
+    if (next.microsoftClientId !== undefined) {
+      if (working || loginInProgress) throw new Error('Нельзя менять Microsoft Client ID во время авторизации или запуска.');
+      const nextClientId = normalizeMicrosoftClientId(next.microsoftClientId);
+      if (nextClientId !== settings.microsoftClientId) {
+        settings.microsoftClientId = nextClientId;
+        // Profiles and Microsoft token caches must not be mixed across OAuth applications.
+        profile = null;
+        settings.launchMode = 'offline';
+      }
+    }
     if (next.ramGb !== undefined) {
       const ram = Number(next.ramGb);
       if (!Number.isInteger(ram) || ram < 2 || ram > 16) throw new Error('ОЗУ: от 2 до 16 ГБ.');
